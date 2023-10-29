@@ -1,0 +1,27 @@
+name: iOS Build
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v1
+        with:
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS app
+        run: flutter build ios --release --no-codesign --build-number ${{ github.run_number }}
+        if: success()
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: iOS-build
+          path: build/ios/iphoneos/Runner.app
