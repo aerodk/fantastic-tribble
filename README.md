@@ -1,6 +1,5 @@
-# halloween
-
-Flutter project for controlling halloween lights
+# fantastic-tribble
+A simple exploration into Hues REST APIs and a fun project to control Halloween lights
 
 ## Getting Started
 
