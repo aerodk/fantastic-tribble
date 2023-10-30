@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,16 +13,19 @@ class HalloweenScreenBody extends StatefulWidget {
 class _HalloweenScreenBodyState extends State<HalloweenScreenBody> {
   double xValue = 0.1;
   double yValue = 0.1;
-  int messagesPerSecond = 1;
-  double brightness = 0.0;
+  double brightness = 60.0;
   List<String> responseList = [];
   bool sending = false;
+  int loopCount = 1; // Antal gentagelser (startværdi)
+  int currentLoop = 0; // Aktuel gentagelse
 
   Timer? messageTimer;
+  Timer? charTimer;
 
   @override
   void dispose() {
     messageTimer?.cancel();
+    charTimer?.cancel();
     super.dispose();
   }
 
@@ -36,8 +38,10 @@ class _HalloweenScreenBodyState extends State<HalloweenScreenBody> {
           onPressed: () {
             setState(() {
               sending = false;
+              messageTimer?.cancel();
+              charTimer?.cancel();
+              currentLoop = 0;
             });
-            messageTimer?.cancel();
           },
           child: Text('Stop'),
         )
@@ -45,22 +49,23 @@ class _HalloweenScreenBodyState extends State<HalloweenScreenBody> {
           onPressed: () {
             setState(() {
               sending = true;
+              currentLoop = loopCount;
             });
             startSendingMessages();
           },
           child: Text('Start'),
         ),
         Slider(
-          value: messagesPerSecond.toDouble(),
+          value: loopCount.toDouble(),
           min: 1,
-          max: 10,
+          max: 100,
           onChanged: (newValue) {
             setState(() {
-              messagesPerSecond = newValue.toInt();
+              loopCount = newValue.toInt();
             });
           },
         ),
-        Text('Messages Per Second: $messagesPerSecond'),
+        Text('Loop Count: ${loopCount == 100 ? '∞' : loopCount}'),
         Slider(
           value: brightness,
           min: 0,
@@ -87,24 +92,77 @@ class _HalloweenScreenBodyState extends State<HalloweenScreenBody> {
   }
 
   void startSendingMessages() {
-    final random = Random();
-    messageTimer = Timer.periodic(Duration(seconds: 1 ~/ messagesPerSecond), (timer) {
-      if (sending) {
-        String body;
+    const morseCode = ".... .- .- .- .- . . - . -... - .-- .";
+    const dotDuration = Duration(milliseconds: 200);
+    const dashDuration = Duration(milliseconds: 350);
+    const pauseDuration = Duration(milliseconds: 450);
+    const charSpacingDuration = Duration(milliseconds: 1000); // Pause mellem tegn
 
-        var nextDouble = random.nextDouble();
-        if(nextDouble < 1/3) {
-          body = jsonEncode({'on': true, 'xy': [0.6, 0.4], 'bri': brightness.toInt()});
-        } else if (nextDouble < 2/3) {
-          body = jsonEncode({'on': true, 'xy': [0.675, 0.322], 'bri': brightness.toInt()});
+    final message = morseCode.split('').where((char) => char != ' ').toList();
+    int currentIndex = 0;
+
+    void sendMessage() {
+      if (currentIndex < message.length) {
+        final char = message[currentIndex];
+        if (char == '.') {
+          sendDot();
+          currentIndex++;
+          charTimer = Timer(dotDuration, () {
+            sendPause();
+            currentIndex++;
+            charTimer = Timer(charSpacingDuration, () {
+              sendMessage();
+            });
+          });
+        } else if (char == '-') {
+          sendDash();
+          currentIndex++;
+          charTimer = Timer(dashDuration, () {
+            sendPause();
+            currentIndex++;
+            charTimer = Timer(charSpacingDuration, () {
+              sendMessage();
+            });
+          });
         } else {
-          body = jsonEncode({'on' : false});
+          sendPause();
+          currentIndex++;
+          charTimer = Timer(pauseDuration, () {
+            sendMessage();
+          });
         }
-        sendCommand(body);
       } else {
-        timer.cancel();
+        if (sending && (loopCount == 100 || currentLoop > 0)) {
+          if (currentLoop < 100) {
+            currentLoop--;
+          }
+          currentIndex = 0;
+          sendMessage();
+        } else {
+          setState(() {
+            sending = false;
+            currentLoop = loopCount; // Sæt til startværdien, ikke 0
+          });
+        }
       }
-    });
+    }
+
+    sendMessage();
+  }
+
+  void sendDot() {
+    final body = jsonEncode({'on': true, 'xy': [0.6, 0.4], 'bri': brightness.toInt()});
+    sendCommand(body);
+  }
+
+  void sendDash() {
+    final body = jsonEncode({'on': true, 'xy': [0.675, 0.322], 'bri': brightness.toInt()});
+    sendCommand(body);
+  }
+
+  void sendPause() {
+    final body = jsonEncode({'on': false});
+    sendCommand(body);
   }
 
   Future<void> sendCommand(String body) async {
@@ -118,6 +176,9 @@ class _HalloweenScreenBodyState extends State<HalloweenScreenBody> {
     );
 
     if (response.statusCode == 200) {
+      if (kDebugMode) {
+        print('Kommando sendt med succes');
+      }
       responseList.insert(0, 'Response: ${response.body}');
       if (responseList.length > 20) {
         responseList.removeLast();
@@ -125,7 +186,7 @@ class _HalloweenScreenBodyState extends State<HalloweenScreenBody> {
       setState(() {});
     } else {
       if (kDebugMode) {
-        print('Kunne ikke sende kommando ${response.body}');
+        print('Kunne ikke sende kommando');
       }
     }
   }
